@@ -173,7 +173,7 @@ class CRMuni_CF7_Integration {
             if ($this->api) {
                 $custom_fields = $this->api->get_custom_fields('leads');
             }
-
+        
             // Her form için eşleme
             foreach ($forms as $form) {
                 echo '<div style="background: #fff; padding: 20px; margin: 20px 0; border: 1px solid #ccd0d4; box-shadow: 0 1px 1px rgba(0,0,0,.04);">';
