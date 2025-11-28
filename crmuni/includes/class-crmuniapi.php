@@ -377,11 +377,29 @@ function crmuni_curl_requestxxxxx($url, $method = 'GET', $data = [], $token = ''
     return $response_data;
 }
 
+/**
+ * Nested array'leri multipart/form-data için flatten eder
+ * Örnek: ['custom_fields' => ['leads' => ['field1' => 'val']]]
+ * -> ['custom_fields[leads][field1]' => 'val']
+ */
+private function flatten_array($array, $prefix = '') {
+    $result = [];
+    foreach ($array as $key => $value) {
+        $new_key = $prefix === '' ? $key : $prefix . '[' . $key . ']';
+        if (is_array($value)) {
+            $result = array_merge($result, $this->flatten_array($value, $new_key));
+        } else {
+            $result[$new_key] = $value;
+        }
+    }
+    return $result;
+}
+
 function crmuni_curl_request($url, $method = 'GET', $data = [], $token = '', $resolve = null)
 {
     crmuni_debug_log('crmuni_curl_request Start -------------------------------');
     crmuni_debug_log('Yapı: ' . $url . ' - ' . $method . ' - ' . json_encode($data) . ' - ' . $token . ' - ' . json_encode($resolve));
-    
+
     // cURL oturumunu başlat
     $ch = curl_init($url);
 
@@ -418,13 +436,19 @@ function crmuni_curl_request($url, $method = 'GET', $data = [], $token = '', $re
     // HTTP metoduna göre işlemi yapıyoruz
     switch (strtoupper($method)) {
         case 'GET':
-            curl_setopt($ch, CURLOPT_HTTPGET, true); 
+            curl_setopt($ch, CURLOPT_HTTPGET, true);
             break;
         case 'POST':
-            curl_setopt($ch, CURLOPT_POST, true); 
+            curl_setopt($ch, CURLOPT_POST, true);
             if (!empty($data)) {
                 crmuni_debug_log('POST Multipart format');
-                curl_setopt($ch, CURLOPT_POSTFIELDS, $data); // Multipart formatında gönderim
+                crmuni_debug_log('POST Data: ' . print_r($data, true));
+
+                // Nested array'leri flatten et
+                $post_data = $this->flatten_array($data);
+                crmuni_debug_log('POST Flattened: ' . print_r($post_data, true));
+
+                curl_setopt($ch, CURLOPT_POSTFIELDS, $post_data);
             } else {
                 crmuni_debug_log('POST Boş');
             }
