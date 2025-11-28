@@ -182,56 +182,93 @@ class CRMuni_CF7_Integration {
                     wp_nonce_field('crmuni_cf7_map_action', '_crmuni_cf7_map_nonce');
 
                     echo '<style>
-                        .crmuni-mapping-cell { display: flex; gap: 10px; align-items: center; }
-                        .crmuni-mapping-cell input[type="text"] { flex: 1; }
-                        .crmuni-mapping-cell select { min-width: 200px; }
+                        .crmuni-field-type { margin-bottom: 10px; }
+                        .crmuni-field-type label { font-weight: 600; }
+                        .crmuni-standard-field, .crmuni-custom-field { margin-top: 5px; }
+                        .hidden { display: none; }
                     </style>';
+
+                    echo '<script>
+                        function toggleFieldType(tagName) {
+                            const checkbox = document.getElementById("is_custom_" + tagName);
+                            const standardField = document.getElementById("standard_" + tagName);
+                            const customField = document.getElementById("custom_" + tagName);
+
+                            if (checkbox.checked) {
+                                standardField.classList.add("hidden");
+                                customField.classList.remove("hidden");
+                            } else {
+                                standardField.classList.remove("hidden");
+                                customField.classList.add("hidden");
+                            }
+                        }
+                    </script>';
 
                     echo '<table class="form-table">
                         <tr>
-                            <th>Form Tag</th>
-                            <th>Perfex Alan</th>
-                            <th>Custom Field (Opsiyonel)</th>
+                            <th style="width: 150px;">Form Tag</th>
+                            <th>Perfex Alan Eşleştirmesi</th>
                         </tr>';
 
                     foreach ($tags as $tag) {
                         $tag_name = isset($tag->name) ? $tag->name : '';
                         $current = $this->get_mapped_api_field_for_form($form->id(), $tag_name);
+                        $is_custom = strpos($current, 'custom:') === 0;
+                        $tag_id = preg_replace('/[^a-zA-Z0-9_]/', '_', $tag_name);
 
                         echo '<tr>';
                         echo '<td><strong>'. esc_html($tag_name) .'</strong></td>';
                         echo '<td>';
+
+                        // Checkbox
+                        echo '<div class="crmuni-field-type">';
+                        echo '<label>';
+                        echo '<input type="checkbox"
+                                id="is_custom_'. esc_attr($tag_id) .'"
+                                onchange="toggleFieldType(\''. esc_js($tag_id) .'\')"
+                                '. ($is_custom ? 'checked' : '') .'>';
+                        echo ' Custom Field Kullan';
+                        echo '</label>';
+                        echo '</div>';
+
+                        // Standart Alan Input
+                        echo '<div id="standard_'. esc_attr($tag_id) .'" class="crmuni-standard-field '. ($is_custom ? 'hidden' : '') .'">';
                         echo '<input type="text"
                                 name="mapping['. esc_attr($tag_name) .']"
-                                value="'. esc_attr($current) .'"
-                                placeholder="name, email, phonenumber, description..."
-                                style="width:100%;"
-                                id="mapping_'. esc_attr($tag_name) .'">';
-                        echo '<small>Standart alanlar: name, email, phonenumber, company, address, city, description</small>';
-                        echo '</td>';
-                        echo '<td>';
+                                value="'. (!$is_custom ? esc_attr($current) : '') .'"
+                                placeholder="name, email, phonenumber, company, description..."
+                                style="width:100%;">';
+                        echo '<small style="color: #666;">Standart alanlar: name, email, phonenumber, company, address, city, state, zip, country, description, website</small>';
+                        echo '</div>';
+
+                        // Custom Field Dropdown
+                        echo '<div id="custom_'. esc_attr($tag_id) .'" class="crmuni-custom-field '. (!$is_custom ? 'hidden' : '') .'">';
 
                         if (!empty($custom_fields)) {
-                            echo '<select onchange="document.getElementById(\'mapping_'. esc_attr($tag_name) .'\').value = this.value" style="width:100%;">';
+                            echo '<select name="mapping['. esc_attr($tag_name) .']" style="width:100%;">';
                             echo '<option value="">-- Custom Field Seç --</option>';
                             foreach ($custom_fields as $field_id => $field_info) {
                                 $option_value = 'custom:' . $field_id;
                                 $selected = ($current === $option_value) ? 'selected' : '';
                                 echo '<option value="'. esc_attr($option_value) .'" '. $selected .'>';
-                                echo esc_html($field_info['label']) . ' [ID: '. esc_html($field_id) .']';
+                                echo esc_html($field_info['label']) . ' (ID: '. esc_html($field_id) .')';
                                 echo '</option>';
                             }
                             echo '</select>';
                         } else {
-                            echo '<em>Custom fields yüklenemedi. API bağlantısını kontrol edin.</em>';
+                            echo '<em style="color: #d63638;">⚠️ Custom fields yüklenemedi. API bağlantısını kontrol edin.</em>';
                         }
+
+                        echo '</div>';
 
                         echo '</td>';
                         echo '</tr>';
                     }
                     echo '</table>';
                     echo '<input type="hidden" name="form_id" value="'. esc_attr($form->id()) .'">';
+                    echo '<p class="submit">';
                     echo '<input type="submit" name="save_mapping" class="button-primary" value="Eşlemeyi Kaydet">';
+                    echo '</p>';
                     echo '</form>';
                 } else {
                     echo '<p>Bu form için tag bulunamadı.</p>';
