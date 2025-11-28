@@ -25,6 +25,13 @@ class CRMuniAPI
         $cache_key = 'crmuni_custom_fields_' . $module;
         $cached = get_transient($cache_key);
 
+        // DEBUG: Cache'i geçici olarak bypass et
+        if ($cached !== false) {
+            crmuni_debug_log('Custom fields cache\'den alındı (debug mode: bypass)');
+            delete_transient($cache_key); // Cache'i temizle
+            $cached = false;
+        }
+
         if ($cached !== false) {
             crmuni_debug_log('Custom fields cache\'den alındı');
             return $cached;
@@ -42,15 +49,25 @@ class CRMuniAPI
         if (!empty($response) && is_array($response)) {
             $lead = $response[0] ?? null;
 
+            crmuni_debug_log('Lead API response: ' . print_r($lead, true));
+
             if ($lead && isset($lead['customfields'])) {
+                crmuni_debug_log('Custom fields raw: ' . print_r($lead['customfields'], true));
+
                 // Perfex'te custom fields şu formatta gelir:
                 // customfields[field_id] = ['value' => 'x', 'label' => 'Field Name', ...]
-                foreach ($lead['customfields'] as $field_id => $field_data) {
+                // VEYA customfields[index] = ['fieldid' => 'x', 'label' => 'Field Name', ...]
+                foreach ($lead['customfields'] as $key => $field_data) {
                     if (is_array($field_data) && isset($field_data['label'])) {
-                        $custom_fields[$field_id] = [
-                            'id' => $field_id,
+                        // Gerçek field ID'sini bul: fieldid, id veya array key
+                        $real_field_id = $field_data['fieldid'] ?? $field_data['id'] ?? $key;
+
+                        crmuni_debug_log("Field: key=$key, real_id=$real_field_id, label=" . $field_data['label']);
+
+                        $custom_fields[$real_field_id] = [
+                            'id' => $real_field_id,
                             'label' => $field_data['label'],
-                            'slug' => $field_data['slug'] ?? 'field_' . $field_id,
+                            'slug' => $field_data['slug'] ?? 'field_' . $real_field_id,
                             'type' => $field_data['type'] ?? 'input'
                         ];
                     }
