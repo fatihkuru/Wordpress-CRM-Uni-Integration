@@ -86,9 +86,9 @@ class CRMuni_CF7_Integration {
 
             if ($api_field) {
                 if (strpos($api_field, 'custom:') === 0) {
-                    // Custom field - Perfex formatında
-                    $custom_label = substr($api_field, 7); // "custom:" prefix'ini kaldır
-                    $custom_fields[$custom_label] = $value_str;
+                    // Custom field - ID formatında
+                    $field_id = substr($api_field, 7); // "custom:" prefix'ini kaldır → ID kalır
+                    $custom_fields[$field_id] = $value_str; // ID'yi key olarak kullan
                 } else {
                     // Normal alan
                     $insert_data[$api_field] = $value_str;
@@ -172,15 +172,61 @@ class CRMuni_CF7_Integration {
                 }
 
                 if (!empty($tags)) {
+                    // Custom fields listesini API'den çek
+                    $custom_fields = [];
+                    if ($this->api) {
+                        $custom_fields = $this->api->get_custom_fields('leads');
+                    }
+
                     echo '<form method="post">';
                     wp_nonce_field('crmuni_cf7_map_action', '_crmuni_cf7_map_nonce');
-                    echo '<table class="form-table"><tr><th>Form Tag</th><th>Perfex Alan/Slug</th></tr>';
+
+                    echo '<style>
+                        .crmuni-mapping-cell { display: flex; gap: 10px; align-items: center; }
+                        .crmuni-mapping-cell input[type="text"] { flex: 1; }
+                        .crmuni-mapping-cell select { min-width: 200px; }
+                    </style>';
+
+                    echo '<table class="form-table">
+                        <tr>
+                            <th>Form Tag</th>
+                            <th>Perfex Alan</th>
+                            <th>Custom Field (Opsiyonel)</th>
+                        </tr>';
+
                     foreach ($tags as $tag) {
                         $tag_name = isset($tag->name) ? $tag->name : '';
                         $current = $this->get_mapped_api_field_for_form($form->id(), $tag_name);
+
                         echo '<tr>';
-                        echo '<td>'. esc_html($tag_name) .'</td>';
-                        echo '<td><input type="text" name="mapping['. esc_attr($tag_name) .']" value="'. esc_attr($current) .'" placeholder="ör: name, email, custom:leads_student_name, custom:leads_hizmetler" style="width:100%;"></td>';
+                        echo '<td><strong>'. esc_html($tag_name) .'</strong></td>';
+                        echo '<td>';
+                        echo '<input type="text"
+                                name="mapping['. esc_attr($tag_name) .']"
+                                value="'. esc_attr($current) .'"
+                                placeholder="name, email, phonenumber, description..."
+                                style="width:100%;"
+                                id="mapping_'. esc_attr($tag_name) .'">';
+                        echo '<small>Standart alanlar: name, email, phonenumber, company, address, city, description</small>';
+                        echo '</td>';
+                        echo '<td>';
+
+                        if (!empty($custom_fields)) {
+                            echo '<select onchange="document.getElementById(\'mapping_'. esc_attr($tag_name) .'\').value = this.value" style="width:100%;">';
+                            echo '<option value="">-- Custom Field Seç --</option>';
+                            foreach ($custom_fields as $field_id => $field_info) {
+                                $option_value = 'custom:' . $field_id;
+                                $selected = ($current === $option_value) ? 'selected' : '';
+                                echo '<option value="'. esc_attr($option_value) .'" '. $selected .'>';
+                                echo esc_html($field_info['label']) . ' [ID: '. esc_html($field_id) .']';
+                                echo '</option>';
+                            }
+                            echo '</select>';
+                        } else {
+                            echo '<em>Custom fields yüklenemedi. API bağlantısını kontrol edin.</em>';
+                        }
+
+                        echo '</td>';
                         echo '</tr>';
                     }
                     echo '</table>';

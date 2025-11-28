@@ -14,6 +14,59 @@ class CRMuniAPI
         }
     }
 
+    /**
+     * Perfex CRM'den leads için custom fields listesini çeker
+     * @return array Custom fields listesi [id => name]
+     */
+    public function get_custom_fields($module = 'leads') {
+        crmuni_debug_log('get_custom_fields başladı, modül: ' . $module);
+
+        // Önce cache'e bakalım (1 saat)
+        $cache_key = 'crmuni_custom_fields_' . $module;
+        $cached = get_transient($cache_key);
+
+        if ($cached !== false) {
+            crmuni_debug_log('Custom fields cache\'den alındı');
+            return $cached;
+        }
+
+        // Perfex API'den custom fields endpoint'ine istek
+        // Not: Perfex API'de direkt custom fields endpoint'i yoksa,
+        // bir lead çekip oradaki custom fields yapısını kullanabiliriz
+        $endpoint = rtrim($this->api_url, '/') . '/api/leads?limit=1';
+
+        $response = $this->crmuni_curl_request($endpoint, 'GET', [], $this->api_key, true);
+
+        $custom_fields = [];
+
+        if (!empty($response) && is_array($response)) {
+            $lead = $response[0] ?? null;
+
+            if ($lead && isset($lead['customfields'])) {
+                // Perfex'te custom fields şu formatta gelir:
+                // customfields[field_id] = ['value' => 'x', 'label' => 'Field Name', ...]
+                foreach ($lead['customfields'] as $field_id => $field_data) {
+                    if (is_array($field_data) && isset($field_data['label'])) {
+                        $custom_fields[$field_id] = [
+                            'id' => $field_id,
+                            'label' => $field_data['label'],
+                            'slug' => $field_data['slug'] ?? 'field_' . $field_id,
+                            'type' => $field_data['type'] ?? 'input'
+                        ];
+                    }
+                }
+            }
+        }
+
+        // Cache'e kaydet (1 saat)
+        if (!empty($custom_fields)) {
+            set_transient($cache_key, $custom_fields, HOUR_IN_SECONDS);
+            crmuni_debug_log('Custom fields cache\'e kaydedildi: ' . count($custom_fields) . ' alan');
+        }
+
+        return $custom_fields;
+    }
+
     public function send_lead_to_api($lead_data)
     {
         crmuni_debug_log('send_lead_to_api başladı.');
