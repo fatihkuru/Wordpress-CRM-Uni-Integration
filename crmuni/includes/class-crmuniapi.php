@@ -14,20 +14,90 @@ class CRMuniAPI
         }
     }
 
+    /**
+     * Perfex CRM'den leads için custom fields listesini çeker
+     * @return array Custom fields listesi [id => ['label'=>..., 'type'=>..., 'slug'=>...]]
+     */
+    public function get_custom_fields($module = 'leads') {
+        crmuni_debug_log('get_custom_fields başladı, modül: ' . $module);
+    
+        // Cache bypass
+        $cache_key = 'crmuni_custom_fields_' . $module;
+        $cached = false;
+    
+        if ($cached !== false) {
+            crmuni_debug_log('Custom fields cache\'den alındı (debug mode: bypass)');
+            delete_transient($cache_key); // Cache temizle
+            $cached = false;
+        }
+    
+        if ($cached !== false) {
+            crmuni_debug_log('Custom fields cache\'den alındı');
+            return $cached;
+        }
+    
+        // API endpoint
+        $endpoint = rtrim($this->api_url, '/') . '/api/custom_fields/' . $module . '/';
+        
+        $response = $this->crmuni_curl_request($endpoint, 'GET', [], $this->api_key, true);
+    
+        $custom_fields = [];
+    
+        if (!empty($response) && is_array($response)) {
+            foreach ($response as $field) {
+                if (isset($field['custom_field_id'], $field['label'], $field['type'])) {
+                    $id = $field['custom_field_id'];
+                    $custom_fields[$id] = [
+                        'label' => $field['label'],
+                        'type'  => $field['type'],
+                        'slug'  => 'field_' . $id
+                    ];
+                }
+            }
+        }
+    
+        // Cache'e kaydet (1 saat)
+        if (!empty($custom_fields)) {
+            set_transient($cache_key, $custom_fields, HOUR_IN_SECONDS);
+            crmuni_debug_log('Custom fields cache\'e kaydedildi: ' . count($custom_fields) . ' alan');
+        }
+    
+        return $custom_fields;
+    }
+
     public function send_lead_to_api($lead_data)
     {
         crmuni_debug_log('send_lead_to_api başladı.');
 
-        // DNS çözümlemesini kontrol et
+        // DNS çözümlemesini kontrol et (sadece warning, engelleme yok)
         if (!$this->test_dns_resolution()) {
-            crmuni_debug_log('CRMuniAPI: DNS çözümleme hatası! API URL\'si çözülemiyor.');
-            return 'DNS çözümleme hatası'; // DNS çözülemiyorsa devam etme
+            crmuni_debug_log('UYARI: DNS çözümleme başarısız ama devam ediliyor...');
         }
-        
-        if (empty($lead_data['name']) || empty($lead_data['source']) || empty($lead_data['status'])) {
-            crmuni_debug_log('Zorunlu alanlar eksik: ' . print_r($lead_data, true));
-            return 'Zorunlu alanlar eksik!';
+
+        // Zorunlu alanları otomatik doldur
+        if (empty($lead_data['name'])) {
+            // Name yoksa başka alanlardan oluştur
+            if (!empty($lead_data['company'])) {
+                $lead_data['name'] = $lead_data['company'];
+            } elseif (!empty($lead_data['email'])) {
+                $lead_data['name'] = $lead_data['email'];
+            } elseif (!empty($lead_data['phonenumber'])) {
+                $lead_data['name'] = $lead_data['phonenumber'];
+            } else {
+                $lead_data['name'] = 'Lead ' . date('Y-m-d H:i:s');
+            }
+            crmuni_debug_log('Name otomatik oluşturuldu: ' . $lead_data['name']);
         }
+
+        if (empty($lead_data['source'])) {
+            $lead_data['source'] = DEFAULT_NEW_LEAD_SOURCE_ID;
+        }
+
+        if (empty($lead_data['status'])) {
+            $lead_data['status'] = DEFAULT_NEW_LEAD_STATUS_ID;
+        }
+
+        crmuni_debug_log('Lead Data Hazır: ' . print_r($lead_data, true));
 
         $oiriginphone = $lead_data['phonenumber'] ?? null;
         $phone = preg_replace('/[^0-9]/', '', $oiriginphone);
@@ -377,11 +447,29 @@ function crmuni_curl_requestxxxxx($url, $method = 'GET', $data = [], $token = ''
     return $response_data;
 }
 
+/**
+ * Nested array'leri multipart/form-data için flatten eder
+ * Örnek: ['custom_fields' => ['leads' => ['field1' => 'val']]]
+ * -> ['custom_fields[leads][field1]' => 'val']
+ */
+private function flatten_array($array, $prefix = '') {
+    $result = [];
+    foreach ($array as $key => $value) {
+        $new_key = $prefix === '' ? $key : $prefix . '[' . $key . ']';
+        if (is_array($value)) {
+            $result = array_merge($result, $this->flatten_array($value, $new_key));
+        } else {
+            $result[$new_key] = $value;
+        }
+    }
+    return $result;
+}
+
 function crmuni_curl_request($url, $method = 'GET', $data = [], $token = '', $resolve = null)
 {
     crmuni_debug_log('crmuni_curl_request Start -------------------------------');
     crmuni_debug_log('Yapı: ' . $url . ' - ' . $method . ' - ' . json_encode($data) . ' - ' . $token . ' - ' . json_encode($resolve));
-    
+
     // cURL oturumunu başlat
     $ch = curl_init($url);
 
@@ -418,13 +506,19 @@ function crmuni_curl_request($url, $method = 'GET', $data = [], $token = '', $re
     // HTTP metoduna göre işlemi yapıyoruz
     switch (strtoupper($method)) {
         case 'GET':
-            curl_setopt($ch, CURLOPT_HTTPGET, true); 
+            curl_setopt($ch, CURLOPT_HTTPGET, true);
             break;
         case 'POST':
-            curl_setopt($ch, CURLOPT_POST, true); 
+            curl_setopt($ch, CURLOPT_POST, true);
             if (!empty($data)) {
                 crmuni_debug_log('POST Multipart format');
-                curl_setopt($ch, CURLOPT_POSTFIELDS, $data); // Multipart formatında gönderim
+                crmuni_debug_log('POST Data: ' . print_r($data, true));
+
+                // Nested array'leri flatten et
+                $post_data = $this->flatten_array($data);
+                crmuni_debug_log('POST Flattened: ' . print_r($post_data, true));
+
+                curl_setopt($ch, CURLOPT_POSTFIELDS, $post_data);
             } else {
                 crmuni_debug_log('POST Boş');
             }

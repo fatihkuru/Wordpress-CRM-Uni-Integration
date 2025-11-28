@@ -73,6 +73,10 @@ class CRMuni_CF7_Integration {
         $custom_fields = [];
         $unmapped_lines = [];
 
+        crmuni_debug_log('=== CF7 MAPPING BAŞLADI ===');
+        crmuni_debug_log('Form ID: ' . $contact_form->id());
+        crmuni_debug_log('Gelen form data: ' . print_r($data, true));
+
         foreach ($data as $tag => $value) {
             if (is_array($value)) {
                 $value_str = implode(', ', array_map('sanitize_text_field', $value));
@@ -84,14 +88,18 @@ class CRMuni_CF7_Integration {
 
             $api_field = $this->get_mapped_api_field_for_form($contact_form->id(), $tag);
 
+            crmuni_debug_log("Tag: '$tag' → API Field: '$api_field' → Value: '$value_str'");
+
             if ($api_field) {
                 if (strpos($api_field, 'custom:') === 0) {
-                    // Custom field - Perfex formatında
-                    $custom_label = substr($api_field, 7); // "custom:" prefix'ini kaldır
-                    $custom_fields[$custom_label] = $value_str;
+                    // Custom field - ID formatında
+                    $field_id = substr($api_field, 7); // "custom:" prefix'ini kaldır → ID kalır
+                    $custom_fields[$field_id] = $value_str; // ID'yi key olarak kullan
+                    crmuni_debug_log("  → Custom Field ID '$field_id' = '$value_str'");
                 } else {
                     // Normal alan
                     $insert_data[$api_field] = $value_str;
+                    crmuni_debug_log("  → Standard Field '$api_field' = '$value_str'");
                 }
             } else {
                 // Mapping yoksa description alt satırına ekle
@@ -100,10 +108,11 @@ class CRMuni_CF7_Integration {
         }
 
         if (!empty($custom_fields)) {
-            // Perfex formatında custom_fields gönder: ['leads' => ['field_slug' => 'value']]
+            // Perfex formatında custom_fields gönder: ['leads' => ['field_id' => 'value']]
             $insert_data['custom_fields'] = [
                 'leads' => $custom_fields
             ];
+            crmuni_debug_log('Custom fields array: ' . print_r($custom_fields, true));
         }
 
         if (!empty($unmapped_lines)) {
@@ -113,11 +122,15 @@ class CRMuni_CF7_Integration {
             } else {
                 $insert_data['description'] .= "\n" . $desc;
             }
+            crmuni_debug_log('Unmapped fields eklendi description\'a');
         }
 
         // Opsiyonel sabit değerler (source, status)
         if (!isset($insert_data['source'])) $insert_data['source'] = 4;
         if (!isset($insert_data['status'])) $insert_data['status'] = 2;
+
+        crmuni_debug_log('Final insert_data: ' . print_r($insert_data, true));
+        crmuni_debug_log('=== CF7 MAPPING BİTTİ ===');
 
         return $insert_data;
     }    
@@ -139,6 +152,7 @@ class CRMuni_CF7_Integration {
             return;
         }
 
+        // Kaydetme işlemi
         if (isset($_POST['save_mapping']) && isset($_POST['mapping']) && isset($_POST['form_id'])) {
             if (!isset($_POST['_crmuni_cf7_map_nonce']) || !wp_verify_nonce($_POST['_crmuni_cf7_map_nonce'], 'crmuni_cf7_map_action')) {
                 echo '<div class="error notice is-dismissible"><p>Güvenlik doğrulaması başarısız.</p></div>';
@@ -148,11 +162,24 @@ class CRMuni_CF7_Integration {
         }
 
         $forms = WPCF7_ContactForm::find();
-        echo '<div class="wrap"><h1>CF7 → Perfex Eşleme</h1>';
-        if (!empty($forms)) {
-            foreach ($forms as $form) {
-                echo '<h2>' . esc_html($form->title()) . ' (Form ID: ' . esc_html($form->id()) . ')</h2>';
 
+        echo '<div class="wrap">';
+        echo '<h1>CF7 → Perfex CRM Eşleme</h1>';
+        echo '<p class="description">Contact Form 7 formlarınızdaki alanları Perfex CRM lead alanlarıyla eşleştirin.</p>';
+
+        if (!empty($forms)) {
+            // Custom fields listesini API'den çek
+            $custom_fields = [];
+            if ($this->api) {
+                $custom_fields = $this->api->get_custom_fields('leads');
+            }
+        
+            // Her form için eşleme
+            foreach ($forms as $form) {
+                echo '<div style="background: #fff; padding: 20px; margin: 20px 0; border: 1px solid #ccd0d4; box-shadow: 0 1px 1px rgba(0,0,0,.04);">';
+                echo '<h2 style="margin-top: 0;">' . esc_html($form->title()) . ' <span style="color: #666; font-size: 14px;">(ID: ' . esc_html($form->id()) . ')</span></h2>';
+
+                // Form tag'lerini çıkar
                 $form_props = $form->get_properties();
                 $content = isset($form_props['form']) ? $form_props['form'] : '';
                 $tags = [];
@@ -172,39 +199,115 @@ class CRMuni_CF7_Integration {
                 }
 
                 if (!empty($tags)) {
-                    echo '<form method="post">';
+                    echo '<form method="post" action="">';
                     wp_nonce_field('crmuni_cf7_map_action', '_crmuni_cf7_map_nonce');
-                    echo '<table class="form-table"><tr><th>Form Tag</th><th>Perfex Alan/Slug</th></tr>';
+                    echo '<input type="hidden" name="form_id" value="'. esc_attr($form->id()) .'">';
+
+                    echo '<table class="wp-list-table widefat fixed striped">';
+                    echo '<thead>';
+                    echo '<tr>';
+                    echo '<th style="width: 200px;">Form Alanı</th>';
+                    echo '<th>Perfex CRM Alanı</th>';
+                    echo '</tr>';
+                    echo '</thead>';
+                    echo '<tbody>';
+
                     foreach ($tags as $tag) {
                         $tag_name = isset($tag->name) ? $tag->name : '';
-                        $current = $this->get_mapped_api_field_for_form($form->id(), $tag_name);
+                        if (empty($tag_name)) continue;
+
+                        $current_value = $this->get_mapped_api_field_for_form($form->id(), $tag_name);
+
                         echo '<tr>';
-                        echo '<td>'. esc_html($tag_name) .'</td>';
-                        echo '<td><input type="text" name="mapping['. esc_attr($tag_name) .']" value="'. esc_attr($current) .'" placeholder="ör: name, email, custom:leads_student_name, custom:leads_hizmetler" style="width:100%;"></td>';
+                        echo '<td><strong>'. esc_html($tag_name) .'</strong></td>';
+                        echo '<td>';
+
+                        // Tek dropdown ile hem standard hem custom fields
+                        echo '<select name="mapping['. esc_attr($tag_name) .']" style="width: 100%; max-width: 500px;">';
+                        echo '<option value="">-- Eşleme Yok --</option>';
+
+                        // Standard fields grubu
+                        echo '<optgroup label="Standart Alanlar">';
+                        $standard_fields = [
+                            'name' => 'İsim (zorunlu)',
+                            'email' => 'E-posta',
+                            'phonenumber' => 'Telefon',
+                            'company' => 'Şirket',
+                            'address' => 'Adres',
+                            'city' => 'Şehir',
+                            'state' => 'İl/Eyalet',
+                            'zip' => 'Posta Kodu',
+                            'country' => 'Ülke',
+                            'description' => 'Açıklama',
+                            'website' => 'Website'
+                        ];
+
+                        foreach ($standard_fields as $field_key => $field_label) {
+                            $selected = ($current_value === $field_key) ? 'selected' : '';
+                            echo '<option value="'. esc_attr($field_key) .'" '. $selected .'>'. esc_html($field_label) .'</option>';
+                        }
+                        echo '</optgroup>';
+
+                        // Custom fields grubu
+                        if (!empty($custom_fields)) {
+                            echo '<optgroup label="Custom Fields (Özel Alanlar)">';
+                            foreach ($custom_fields as $field_id => $field_info) {
+                                $option_value = 'custom:' . $field_id;
+                                $selected = ($current_value === $option_value) ? 'selected' : '';
+                                echo '<option value="'. esc_attr($option_value) .'" '. $selected .'>';
+                                echo esc_html($field_info['label']) . ' (ID: '. esc_html($field_id) .')';
+                                echo '</option>';
+                            }
+                            echo '</optgroup>';
+                        }
+
+                        echo '</select>';
+                        echo '</td>';
                         echo '</tr>';
                     }
+
+                    echo '</tbody>';
                     echo '</table>';
-                    echo '<input type="hidden" name="form_id" value="'. esc_attr($form->id()) .'">';
-                    echo '<input type="submit" name="save_mapping" class="button-primary" value="Eşlemeyi Kaydet">';
+
+                    echo '<p class="submit" style="padding-left: 0;">';
+                    echo '<input type="submit" name="save_mapping" class="button button-primary" value="Kaydet">';
+                    echo '</p>';
                     echo '</form>';
                 } else {
-                    echo '<p>Bu form için tag bulunamadı.</p>';
+                    echo '<p style="color: #d63638;">Bu formda eşleştirilecek alan bulunamadı.</p>';
                 }
+
+                echo '</div>'; // form container
+            }
+
+            if (empty($custom_fields) && $this->api) {
+                echo '<div class="notice notice-warning" style="margin: 20px 0;">';
+                echo '<p><strong>Uyarı:</strong> Custom fields yüklenemedi. Perfex CRM API bağlantınızı kontrol edin.</p>';
+                echo '</div>';
             }
         } else {
-            echo '<p>Contact Form 7 formu bulunamadı.</p>';
+            echo '<div class="notice notice-error"><p>Contact Form 7 formu bulunamadı.</p></div>';
         }
-        echo '</div>';
+
+        echo '</div>'; // wrap
     }
 
     private function save_mapping($form_id, $mapping) {
         global $wpdb;
         $table_name = $wpdb->prefix . 'crmuni_cf7_mapping';
+
+        crmuni_debug_log('=== MAPPING KAYDEDİLİYOR ===');
+        crmuni_debug_log('Form ID: ' . $form_id);
+        crmuni_debug_log('Mapping data: ' . print_r($mapping, true));
+
         foreach ($mapping as $tag => $slug) {
             $tag_s = sanitize_text_field($tag);
             $slug_s = sanitize_text_field($slug);
+
+            crmuni_debug_log("Mapping: Tag '$tag_s' → API Field '$slug_s'");
+
             if (!empty($slug_s)) {
-                $wpdb->replace(
+                $result = $wpdb->replace(
                     $table_name,
                     [
                         'form_id' => intval($form_id),
@@ -213,8 +316,9 @@ class CRMuni_CF7_Integration {
                     ],
                     ['%d','%s','%s']
                 );
+                crmuni_debug_log("  → DB replace result: " . ($result ? 'SUCCESS' : 'FAILED'));
             } else {
-                $wpdb->delete(
+                $result = $wpdb->delete(
                     $table_name,
                     [
                         'form_id' => intval($form_id),
@@ -222,8 +326,11 @@ class CRMuni_CF7_Integration {
                     ],
                     ['%d','%s']
                 );
+                crmuni_debug_log("  → DB delete result: " . ($result ? 'SUCCESS' : 'FAILED'));
             }
         }
+
+        crmuni_debug_log('=== MAPPING KAYDEDİLDİ ===');
         echo '<div class="updated notice is-dismissible"><p>Eşlemeler kaydedildi.</p></div>';
     }
 }
