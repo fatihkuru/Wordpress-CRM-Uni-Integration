@@ -38,42 +38,71 @@ class CRMuniAPI
         }
 
         // Perfex API'den custom fields endpoint'ine istek
-        // Not: Perfex API'de direkt custom fields endpoint'i yoksa,
-        // bir lead çekip oradaki custom fields yapısını kullanabiliriz
-        $endpoint = rtrim($this->api_url, '/') . '/api/leads?limit=1';
+        // Önce direkt custom_fields endpoint'ini dene
+        $endpoint = rtrim($this->api_url, '/') . '/api/custom_fields';
+        crmuni_debug_log('Deneniyor: ' . $endpoint);
 
         $response = $this->crmuni_curl_request($endpoint, 'GET', [], $this->api_key, true);
+        crmuni_debug_log('/api/custom_fields response: ' . print_r($response, true));
 
         $custom_fields = [];
+        $is_leads_endpoint = false;
+
+        // Eğer custom_fields endpoint çalışmazsa, leads endpoint'ini dene
+        if (empty($response) || !is_array($response)) {
+            crmuni_debug_log('custom_fields endpoint çalışmadı, leads endpoint deneniyor...');
+            $endpoint = rtrim($this->api_url, '/') . '/api/leads?limit=1';
+            $response = $this->crmuni_curl_request($endpoint, 'GET', [], $this->api_key, true);
+            $is_leads_endpoint = true;
+        }
 
         if (!empty($response) && is_array($response)) {
-            $lead = $response[0] ?? null;
+            // Eğer custom_fields endpoint kullanıldıysa, direkt array dönüyor olabilir
+            if (!$is_leads_endpoint) {
+                crmuni_debug_log('Custom fields endpoint response işleniyor...');
+                // Response formatı: Array of custom field definitions
+                foreach ($response as $field) {
+                    if (is_array($field)) {
+                        crmuni_debug_log("Custom field definition: " . print_r($field, true));
 
-            crmuni_debug_log('Lead API response: ' . print_r($lead, true));
+                        // Gerçek field ID'sini bul
+                        $field_id = $field['id'] ?? $field['fieldid'] ?? null;
+                        $field_label = $field['name'] ?? $field['label'] ?? $field['field_name'] ?? 'Unknown';
 
-            if ($lead && isset($lead['customfields'])) {
-                crmuni_debug_log('Custom fields raw: ' . print_r($lead['customfields'], true));
+                        if ($field_id) {
+                            $custom_fields[$field_id] = [
+                                'id' => $field_id,
+                                'label' => $field_label,
+                                'slug' => $field['slug'] ?? 'field_' . $field_id,
+                                'type' => $field['type'] ?? 'input'
+                            ];
+                            crmuni_debug_log("Custom field parsed: ID=$field_id, Label=$field_label");
+                        }
+                    }
+                }
+            } else {
+                // Leads endpoint kullanıldı, eski mantık
+                $lead = $response[0] ?? null;
+                crmuni_debug_log('Lead API response: ' . print_r($lead, true));
 
-                // Perfex'te custom fields şu formatta gelir:
-                // customfields[field_id] = ['value' => 'x', 'label' => 'Field Name', ...]
-                // VEYA customfields[index] = ['fieldid' => 'x', 'label' => 'Field Name', ...]
-                foreach ($lead['customfields'] as $key => $field_data) {
-                    // Her field'ın TÜM property'lerini logla
-                    crmuni_debug_log("Field [$key] ALL KEYS: " . implode(', ', array_keys($field_data)));
-                    crmuni_debug_log("Field [$key] full data: " . print_r($field_data, true));
+                if ($lead && isset($lead['customfields'])) {
+                    crmuni_debug_log('Custom fields raw: ' . print_r($lead['customfields'], true));
 
-                    if (is_array($field_data) && isset($field_data['label'])) {
-                        // Gerçek field ID'sini bul: fieldid, id veya array key
-                        $real_field_id = $field_data['fieldid'] ?? $field_data['id'] ?? $key;
+                    foreach ($lead['customfields'] as $key => $field_data) {
+                        crmuni_debug_log("Field [$key] ALL KEYS: " . implode(', ', array_keys($field_data)));
+                        crmuni_debug_log("Field [$key] full data: " . print_r($field_data, true));
 
-                        crmuni_debug_log("Field: key=$key, real_id=$real_field_id, label=" . $field_data['label']);
-
-                        $custom_fields[$real_field_id] = [
-                            'id' => $real_field_id,
-                            'label' => $field_data['label'],
-                            'slug' => $field_data['slug'] ?? 'field_' . $real_field_id,
-                            'type' => $field_data['type'] ?? 'input'
-                        ];
+                        if (is_array($field_data) && isset($field_data['label'])) {
+                            // leads endpoint'ten label-based mapping kullan
+                            // Array key'i ID olarak kullanacağız (başka seçenek yok)
+                            $custom_fields[$key] = [
+                                'id' => $key,
+                                'label' => $field_data['label'],
+                                'slug' => $field_data['slug'] ?? 'field_' . $key,
+                                'type' => $field_data['type'] ?? 'input'
+                            ];
+                            crmuni_debug_log("Field mapped: key=$key, label=" . $field_data['label']);
+                        }
                     }
                 }
             }
