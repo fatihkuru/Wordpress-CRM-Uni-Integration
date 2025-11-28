@@ -197,19 +197,16 @@ class CRMuni_CF7_Integration {
                             if (checkbox.checked) {
                                 standardField.classList.add("hidden");
                                 customField.classList.remove("hidden");
-                                // Hidden field'ı disable et
                                 standardField.querySelector("input").disabled = true;
                                 customField.querySelector("select").disabled = false;
                             } else {
                                 standardField.classList.remove("hidden");
                                 customField.classList.add("hidden");
-                                // Hidden field'ı disable et
                                 standardField.querySelector("input").disabled = false;
                                 customField.querySelector("select").disabled = true;
                             }
                         }
 
-                        // Sayfa yüklendiğinde tüm checkbox'ları kontrol et
                         document.addEventListener("DOMContentLoaded", function() {
                             document.querySelectorAll("[id^=is_custom_]").forEach(function(checkbox) {
                                 const tagName = checkbox.id.replace("is_custom_", "");
