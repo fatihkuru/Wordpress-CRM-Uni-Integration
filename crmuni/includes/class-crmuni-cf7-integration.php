@@ -88,6 +88,12 @@ class CRMuni_CF7_Integration {
                 if (strpos($api_field, 'custom:') === 0) {
                     // Custom field - Perfex formatında
                     $custom_label = substr($api_field, 7); // "custom:" prefix'ini kaldır
+
+                    // Eğer leads_ ile başlıyorsa, bu prefix'i de kaldır
+                    if (strpos($custom_label, 'leads_') === 0) {
+                        $custom_label = substr($custom_label, 6); // "leads_" prefix'ini kaldır (6 karakter)
+                    }
+
                     $custom_fields[$custom_label] = $value_str;
                 } else {
                     // Normal alan
