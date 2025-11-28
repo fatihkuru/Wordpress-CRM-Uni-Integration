@@ -29,6 +29,13 @@ define('DEFAULT_NEW_LEAD_STATUS_ID', 2);              // CRMUNI Default Lead Sta
 define('DEFAULT_NEW_LEAD_SOURCE_ID', 4);              // CRMUNI Default Lead Status Id'si
 define('CRMUNI_TOKEN', 'uni');
 
+// Include required classes
+require_once plugin_dir_path(__FILE__) . 'includes/class-crmuni.php';
+require_once plugin_dir_path(__FILE__) . 'includes/class-crmuniapi.php';
+require_once plugin_dir_path(__FILE__) . 'includes/class-crmuni-cf7-integration.php';
+require_once plugin_dir_path(__FILE__) . 'includes/class-crmuni-ar-contactus.php';
+require_once plugin_dir_path(__FILE__) . 'includes/class-crmuni-copyright.php';
+
 // Güncelleme kontrol fonksiyonu ekle
 function crmuni_plugin_update_check()
 {
