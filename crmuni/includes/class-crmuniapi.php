@@ -71,16 +71,35 @@ class CRMuniAPI
     {
         crmuni_debug_log('send_lead_to_api başladı.');
 
-        // DNS çözümlemesini kontrol et
+        // DNS çözümlemesini kontrol et (sadece warning, engelleme yok)
         if (!$this->test_dns_resolution()) {
-            crmuni_debug_log('CRMuniAPI: DNS çözümleme hatası! API URL\'si çözülemiyor.');
-            return 'DNS çözümleme hatası'; // DNS çözülemiyorsa devam etme
+            crmuni_debug_log('UYARI: DNS çözümleme başarısız ama devam ediliyor...');
         }
-        
-        if (empty($lead_data['name']) || empty($lead_data['source']) || empty($lead_data['status'])) {
-            crmuni_debug_log('Zorunlu alanlar eksik: ' . print_r($lead_data, true));
-            return 'Zorunlu alanlar eksik!';
+
+        // Zorunlu alanları otomatik doldur
+        if (empty($lead_data['name'])) {
+            // Name yoksa başka alanlardan oluştur
+            if (!empty($lead_data['company'])) {
+                $lead_data['name'] = $lead_data['company'];
+            } elseif (!empty($lead_data['email'])) {
+                $lead_data['name'] = $lead_data['email'];
+            } elseif (!empty($lead_data['phonenumber'])) {
+                $lead_data['name'] = $lead_data['phonenumber'];
+            } else {
+                $lead_data['name'] = 'Lead ' . date('Y-m-d H:i:s');
+            }
+            crmuni_debug_log('Name otomatik oluşturuldu: ' . $lead_data['name']);
         }
+
+        if (empty($lead_data['source'])) {
+            $lead_data['source'] = DEFAULT_NEW_LEAD_SOURCE_ID;
+        }
+
+        if (empty($lead_data['status'])) {
+            $lead_data['status'] = DEFAULT_NEW_LEAD_STATUS_ID;
+        }
+
+        crmuni_debug_log('Lead Data Hazır: ' . print_r($lead_data, true));
 
         $oiriginphone = $lead_data['phonenumber'] ?? null;
         $phone = preg_replace('/[^0-9]/', '', $oiriginphone);
