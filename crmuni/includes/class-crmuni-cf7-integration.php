@@ -68,30 +68,27 @@ class CRMuni_CF7_Integration {
     private function map_form_to_lead_data($data, $contact_form) {
         global $wpdb;
         $table_name = $wpdb->prefix . 'crmuni_cf7_mapping';
-    
+
         $insert_data = [];
         $custom_fields = [];
         $unmapped_lines = [];
-    
+
         foreach ($data as $tag => $value) {
             if (is_array($value)) {
                 $value_str = implode(', ', array_map('sanitize_text_field', $value));
             } else {
                 $value_str = sanitize_text_field($value);
             }
-    
+
             if ($value_str === '') continue; // boş değerleri atla
-    
+
             $api_field = $this->get_mapped_api_field_for_form($contact_form->id(), $tag);
-    
+
             if ($api_field) {
                 if (strpos($api_field, 'custom:') === 0) {
-                    // Custom field
-                    $custom_label = substr($api_field, 7); // "custom:" prefix’ini kaldır
-                    $custom_fields[] = [
-                        'label' => $custom_label,
-                        'value' => $value_str
-                    ];
+                    // Custom field - Perfex formatında
+                    $custom_label = substr($api_field, 7); // "custom:" prefix'ini kaldır
+                    $custom_fields[$custom_label] = $value_str;
                 } else {
                     // Normal alan
                     $insert_data[$api_field] = $value_str;
@@ -101,11 +98,14 @@ class CRMuni_CF7_Integration {
                 $unmapped_lines[] = $tag . ': ' . $value_str;
             }
         }
-    
+
         if (!empty($custom_fields)) {
-            $insert_data['custom_fields'] = $custom_fields;
+            // Perfex formatında custom_fields gönder: ['leads' => ['field_slug' => 'value']]
+            $insert_data['custom_fields'] = [
+                'leads' => $custom_fields
+            ];
         }
-    
+
         if (!empty($unmapped_lines)) {
             $desc = implode("\n", $unmapped_lines);
             if (!isset($insert_data['description'])) {
@@ -114,11 +114,11 @@ class CRMuni_CF7_Integration {
                 $insert_data['description'] .= "\n" . $desc;
             }
         }
-    
+
         // Opsiyonel sabit değerler (source, status)
         if (!isset($insert_data['source'])) $insert_data['source'] = 4;
         if (!isset($insert_data['status'])) $insert_data['status'] = 2;
-    
+
         return $insert_data;
     }    
     
