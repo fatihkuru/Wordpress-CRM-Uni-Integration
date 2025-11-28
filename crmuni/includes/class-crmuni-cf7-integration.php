@@ -73,6 +73,10 @@ class CRMuni_CF7_Integration {
         $custom_fields = [];
         $unmapped_lines = [];
 
+        crmuni_debug_log('=== CF7 MAPPING BAŞLADI ===');
+        crmuni_debug_log('Form ID: ' . $contact_form->id());
+        crmuni_debug_log('Gelen form data: ' . print_r($data, true));
+
         foreach ($data as $tag => $value) {
             if (is_array($value)) {
                 $value_str = implode(', ', array_map('sanitize_text_field', $value));
@@ -84,14 +88,18 @@ class CRMuni_CF7_Integration {
 
             $api_field = $this->get_mapped_api_field_for_form($contact_form->id(), $tag);
 
+            crmuni_debug_log("Tag: '$tag' → API Field: '$api_field' → Value: '$value_str'");
+
             if ($api_field) {
                 if (strpos($api_field, 'custom:') === 0) {
                     // Custom field - ID formatında
                     $field_id = substr($api_field, 7); // "custom:" prefix'ini kaldır → ID kalır
                     $custom_fields[$field_id] = $value_str; // ID'yi key olarak kullan
+                    crmuni_debug_log("  → Custom Field ID '$field_id' = '$value_str'");
                 } else {
                     // Normal alan
                     $insert_data[$api_field] = $value_str;
+                    crmuni_debug_log("  → Standard Field '$api_field' = '$value_str'");
                 }
             } else {
                 // Mapping yoksa description alt satırına ekle
@@ -100,10 +108,11 @@ class CRMuni_CF7_Integration {
         }
 
         if (!empty($custom_fields)) {
-            // Perfex formatında custom_fields gönder: ['leads' => ['field_slug' => 'value']]
+            // Perfex formatında custom_fields gönder: ['leads' => ['field_id' => 'value']]
             $insert_data['custom_fields'] = [
                 'leads' => $custom_fields
             ];
+            crmuni_debug_log('Custom fields array: ' . print_r($custom_fields, true));
         }
 
         if (!empty($unmapped_lines)) {
@@ -113,11 +122,15 @@ class CRMuni_CF7_Integration {
             } else {
                 $insert_data['description'] .= "\n" . $desc;
             }
+            crmuni_debug_log('Unmapped fields eklendi description\'a');
         }
 
         // Opsiyonel sabit değerler (source, status)
         if (!isset($insert_data['source'])) $insert_data['source'] = 4;
         if (!isset($insert_data['status'])) $insert_data['status'] = 2;
+
+        crmuni_debug_log('Final insert_data: ' . print_r($insert_data, true));
+        crmuni_debug_log('=== CF7 MAPPING BİTTİ ===');
 
         return $insert_data;
     }    
@@ -282,11 +295,19 @@ class CRMuni_CF7_Integration {
     private function save_mapping($form_id, $mapping) {
         global $wpdb;
         $table_name = $wpdb->prefix . 'crmuni_cf7_mapping';
+
+        crmuni_debug_log('=== MAPPING KAYDEDİLİYOR ===');
+        crmuni_debug_log('Form ID: ' . $form_id);
+        crmuni_debug_log('Mapping data: ' . print_r($mapping, true));
+
         foreach ($mapping as $tag => $slug) {
             $tag_s = sanitize_text_field($tag);
             $slug_s = sanitize_text_field($slug);
+
+            crmuni_debug_log("Mapping: Tag '$tag_s' → API Field '$slug_s'");
+
             if (!empty($slug_s)) {
-                $wpdb->replace(
+                $result = $wpdb->replace(
                     $table_name,
                     [
                         'form_id' => intval($form_id),
@@ -295,8 +316,9 @@ class CRMuni_CF7_Integration {
                     ],
                     ['%d','%s','%s']
                 );
+                crmuni_debug_log("  → DB replace result: " . ($result ? 'SUCCESS' : 'FAILED'));
             } else {
-                $wpdb->delete(
+                $result = $wpdb->delete(
                     $table_name,
                     [
                         'form_id' => intval($form_id),
@@ -304,8 +326,11 @@ class CRMuni_CF7_Integration {
                     ],
                     ['%d','%s']
                 );
+                crmuni_debug_log("  → DB delete result: " . ($result ? 'SUCCESS' : 'FAILED'));
             }
         }
+
+        crmuni_debug_log('=== MAPPING KAYDEDİLDİ ===');
         echo '<div class="updated notice is-dismissible"><p>Eşlemeler kaydedildi.</p></div>';
     }
 }
