@@ -178,7 +178,7 @@ class CRMuni_CF7_Integration {
                         $custom_fields = $this->api->get_custom_fields('leads');
                     }
 
-                    echo '<form method="post">';
+                    echo '<form method="post" id="crmuni_mapping_form" onsubmit="enableAllFields()">';
                     wp_nonce_field('crmuni_cf7_map_action', '_crmuni_cf7_map_nonce');
 
                     echo '<style>
@@ -205,6 +205,16 @@ class CRMuni_CF7_Integration {
                                 standardField.querySelector("input").disabled = false;
                                 customField.querySelector("select").disabled = true;
                             }
+                        }
+
+                        function enableAllFields() {
+                            document.querySelectorAll("#crmuni_mapping_form input[type=text]").forEach(function(input) {
+                                input.disabled = false;
+                            });
+                            document.querySelectorAll("#crmuni_mapping_form select").forEach(function(select) {
+                                select.disabled = false;
+                            });
+                            return true;
                         }
 
                         document.addEventListener("DOMContentLoaded", function() {
