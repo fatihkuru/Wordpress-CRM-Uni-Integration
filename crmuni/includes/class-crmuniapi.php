@@ -58,6 +58,10 @@ class CRMuniAPI
                 // customfields[field_id] = ['value' => 'x', 'label' => 'Field Name', ...]
                 // VEYA customfields[index] = ['fieldid' => 'x', 'label' => 'Field Name', ...]
                 foreach ($lead['customfields'] as $key => $field_data) {
+                    // Her field'ın TÜM property'lerini logla
+                    crmuni_debug_log("Field [$key] ALL KEYS: " . implode(', ', array_keys($field_data)));
+                    crmuni_debug_log("Field [$key] full data: " . print_r($field_data, true));
+
                     if (is_array($field_data) && isset($field_data['label'])) {
                         // Gerçek field ID'sini bul: fieldid, id veya array key
                         $real_field_id = $field_data['fieldid'] ?? $field_data['id'] ?? $key;
